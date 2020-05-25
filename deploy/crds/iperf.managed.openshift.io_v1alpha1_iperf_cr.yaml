@@ -1,0 +1,7 @@
+apiVersion: iperf.managed.openshift.io/v1alpha1
+kind: Iperf
+metadata:
+  name: example-iperf
+spec:
+  # Add fields here
+  size: 3
