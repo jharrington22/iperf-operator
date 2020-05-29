@@ -2,11 +2,13 @@ package iperf
 
 import (
 	"context"
+	"fmt"
+	"strconv"
+	"time"
 
 	iperfv1alpha1 "github.com/jharrington22/iperf-operator/pkg/apis/iperf/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -20,6 +22,10 @@ import (
 )
 
 var log = logf.Log.WithName("controller_iperf")
+
+const (
+	requeueWaitTime = time.Duration(1)
+)
 
 /**
 * USER ACTION REQUIRED: This is a scaffold file intended for the user to modify with their own Controller
@@ -51,15 +57,15 @@ func add(mgr manager.Manager, r reconcile.Reconciler) error {
 		return err
 	}
 
-	// TODO(user): Modify this to be the types you create that are owned by the primary resource
-	// Watch for changes to secondary resource Pods and requeue the owner Iperf
-	err = c.Watch(&source.Kind{Type: &corev1.Pod{}}, &handler.EnqueueRequestForOwner{
-		IsController: true,
-		OwnerType:    &iperfv1alpha1.Iperf{},
-	})
-	if err != nil {
-		return err
-	}
+	// // TODO(user): Modify this to be the types you create that are owned by the primary resource
+	// // Watch for changes to secondary resource Pods and requeue the owner Iperf
+	// err = c.Watch(&source.Kind{Type: &corev1.Pod{}}, &handler.EnqueueRequestForOwner{
+	// 	IsController: true,
+	// 	OwnerType:    &iperfv1alpha1.Iperf{},
+	// })
+	// if err != nil {
+	// 	return err
+	// }
 
 	return nil
 }
@@ -87,67 +93,170 @@ func (r *ReconcileIperf) Reconcile(request reconcile.Request) (reconcile.Result,
 	reqLogger.Info("Reconciling Iperf")
 
 	// Fetch the Iperf instance
-	instance := &iperfv1alpha1.Iperf{}
-	err := r.client.Get(context.TODO(), request.NamespacedName, instance)
+	cr := &iperfv1alpha1.Iperf{}
+	err := r.client.Get(context.TODO(), types.NamespacedName{Name: request.Name, Namespace: request.Namespace}, cr)
 	if err != nil {
 		if errors.IsNotFound(err) {
 			// Request object not found, could have been deleted after reconcile request.
 			// Owned objects are automatically garbage collected. For additional cleanup logic use finalizers.
 			// Return and don't requeue
+			reqLogger.Info("Error CR not found")
 			return reconcile.Result{}, nil
 		}
 		// Error reading the object - requeue the request.
+		reqLogger.Info("Error getting CR")
 		return reconcile.Result{}, err
 	}
 
-	// Define a new Pod object
-	pod := newPodForCR(instance)
+	fmt.Println(fmt.Sprintf("%+v", cr))
 
-	// Set Iperf instance as the owner and controller
-	if err := controllerutil.SetControllerReference(instance, pod, r.scheme); err != nil {
+	fmt.Println(cr.Spec.SessionDuration)
+
+	// Fetch a list of worker nodes on the cluster
+	workerNodeList := &corev1.NodeList{}
+	workerNodeListOpts := []client.ListOption{
+		client.MatchingLabels{
+			nodeWorkerSelectorKey: nodeWorkerSelectorValue,
+		},
+	}
+	err = r.client.List(context.TODO(), workerNodeList, workerNodeListOpts...)
+	if err != nil {
 		return reconcile.Result{}, err
 	}
 
-	// Check if this Pod already exists
-	found := &corev1.Pod{}
-	err = r.client.Get(context.TODO(), types.NamespacedName{Name: pod.Name, Namespace: pod.Namespace}, found)
-	if err != nil && errors.IsNotFound(err) {
-		reqLogger.Info("Creating a new Pod", "Pod.Namespace", pod.Namespace, "Pod.Name", pod.Name)
-		err = r.client.Create(context.TODO(), pod)
-		if err != nil {
+	// Fetch configuration for iPerf client/server's
+	sessionDuration := strconv.Itoa(cr.Spec.SessionDuration / len(workerNodeList.Items))
+	concurrentConnections := strconv.Itoa(cr.Spec.ConcurrentConnections / len(workerNodeList.Items))
+
+	reqLogger.Info(fmt.Sprintf("From CR: SessionDuration: %d, ConcurrentContections: %d", cr.Spec.SessionDuration, cr.Spec.ConcurrentConnections))
+	reqLogger.Info(fmt.Sprintf("From Var: SessionDuration: %s, ConcurrentContections: %s", sessionDuration, concurrentConnections))
+
+	// Determine the number of worker nodes
+	workerNodeNum := len(workerNodeList.Items)
+
+	reqLogger.Info(fmt.Sprintf("%d worker nodes found", workerNodeNum))
+
+	workerNodeLabels := getWorkerNodeLabels(workerNodeList)
+
+	iperfServers := make(map[string]string)
+
+	for _, label := range workerNodeLabels {
+		serverNamePrefix := "iperf-server-"
+		namespacedName := types.NamespacedName{
+			Name:      fmt.Sprintf("%s%s", serverNamePrefix, label),
+			Namespace: request.Namespace,
+		}
+		// Create server pod on worker node
+		iperfServerPod := generateServerPod(namespacedName, label)
+
+		// Set Iperf instance as the owner and controller
+		if err := controllerutil.SetControllerReference(cr, iperfServerPod, r.scheme); err != nil {
 			return reconcile.Result{}, err
 		}
 
-		// Pod created successfully - don't requeue
-		return reconcile.Result{}, nil
+		// Check if a server pod already exists
+		found := &corev1.Pod{}
+		err = r.client.Get(context.TODO(), types.NamespacedName{Name: namespacedName.Name, Namespace: namespacedName.Namespace}, found)
+		if err != nil && errors.IsNotFound(err) {
+			reqLogger.Info("Creating a new iperf server Pod", "iperfServerPod.Namespace", iperfServerPod.Namespace, "iperfServerPod.Name", iperfServerPod.Name, "iperServerPodWorkerLabel", label)
+			err = r.client.Create(context.TODO(), iperfServerPod)
+			if err != nil {
+				return reconcile.Result{}, err
+			}
+		} else if err != nil {
+			return reconcile.Result{}, err
+		}
+		// Continue as server pod alraedy exists
+
+		time.Sleep(time.Duration(10 * time.Second))
+		// Get server pod IP to pass to iPerf clients
+		iperfServerIP, err := r.getServerPodIP(namespacedName)
+		if err != nil {
+			if errors.IsNotFound(err) {
+				// Request object not found, object my not be ready yet
+				// TODO: Wait for object to exist instead of requeuing in time
+				// Log that the object was not found and that we are requeuing (Assuming it'll exist in the future)
+				reqLogger.Info(fmt.Sprintf("Unable to find pod %s retrying in %d", namespacedName.Name, requeueWaitTime))
+				return reconcile.Result{RequeueAfter: requeueWaitTime}, nil
+			}
+			// Error reading the object - requeue the request.
+			return reconcile.Result{}, err
+		}
+
+		iperfServers[label] = *iperfServerIP
+	}
+
+	reqLogger.Info(fmt.Sprintf("Iperf server map: %+v", iperfServers))
+
+	// Check if a server pod already exists
+	found := &corev1.Service{}
+	err = r.client.Get(context.TODO(), types.NamespacedName{Name: "iperf-service", Namespace: "iperf-operator"}, found)
+	if err != nil && errors.IsNotFound(err) {
+		iperfService := generateIperfService()
+		// Set Iperf instance as the owner and controller
+		if err := controllerutil.SetControllerReference(cr, iperfService, r.scheme); err != nil {
+			return reconcile.Result{}, err
+		}
+		reqLogger.Info("Creating a new iperf service")
+		err = r.client.Create(context.TODO(), iperfService)
+		if err != nil {
+			return reconcile.Result{}, err
+		}
 	} else if err != nil {
 		return reconcile.Result{}, err
 	}
 
-	// Pod already exists - don't requeue
-	reqLogger.Info("Skip reconcile: Pod already exists", "Pod.Namespace", found.Namespace, "Pod.Name", found.Name)
+	time.Sleep(time.Duration(5 * time.Second))
+	iperfService := &corev1.Service{}
+	err = r.client.Get(context.TODO(), types.NamespacedName{Name: "iperf-service", Namespace: "iperf-operator"}, iperfService)
+	if err != nil {
+		return reconcile.Result{}, err
+	}
+
+	// Continue as service alraedy exists
+
+	for label, iperfServerIP := range iperfServers {
+		clientNamePrefix := "iperf-client-"
+		namespacedName := types.NamespacedName{
+			Name:      fmt.Sprintf("%s%s", clientNamePrefix, label),
+			Namespace: request.Namespace,
+		}
+		iperfClientPod := generateClientPod(namespacedName, iperfService.Spec.ClusterIP, label, sessionDuration, concurrentConnections)
+
+		// Set Iperf instance as the owner and controller
+		if err := controllerutil.SetControllerReference(cr, iperfClientPod, r.scheme); err != nil {
+			return reconcile.Result{}, err
+		}
+
+		// Check if a server pod already exists
+		found := &corev1.Pod{}
+		err = r.client.Get(context.TODO(), types.NamespacedName{Name: namespacedName.Name, Namespace: namespacedName.Namespace}, found)
+		if err != nil && errors.IsNotFound(err) {
+			reqLogger.Info("Creating a new iperf client Pod", "iperfClientPod.Namespace", iperfClientPod.Namespace, "iperfClientPod.Name", iperfClientPod.Name, "iperClientPodWorkerLabel", label, "ServerIP", iperfServerIP, "iperfConcurrentConnections", concurrentConnections, "iperfSessionDuration", sessionDuration)
+			err = r.client.Create(context.TODO(), iperfClientPod)
+			if err != nil {
+				return reconcile.Result{}, err
+			}
+		} else if err != nil {
+			return reconcile.Result{}, err
+		}
+		// Continue as client pod alraedy exists
+	}
+
+	reqLogger.Info("Server and clients created")
+
 	return reconcile.Result{}, nil
 }
 
-// newPodForCR returns a busybox pod with the same name/namespace as the cr
-func newPodForCR(cr *iperfv1alpha1.Iperf) *corev1.Pod {
-	labels := map[string]string{
-		"app": cr.Name,
+func (r *ReconcileIperf) getServerPodIP(namespacedName types.NamespacedName) (*string, error) {
+
+	pod := &corev1.Pod{}
+	err := r.client.Get(context.TODO(), namespacedName, pod)
+	if err != nil {
+		// Return the error to the recoile so it can requeue correctly
+		return nil, err
 	}
-	return &corev1.Pod{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      cr.Name + "-pod",
-			Namespace: cr.Namespace,
-			Labels:    labels,
-		},
-		Spec: corev1.PodSpec{
-			Containers: []corev1.Container{
-				{
-					Name:    "busybox",
-					Image:   "busybox",
-					Command: []string{"sleep", "3600"},
-				},
-			},
-		},
-	}
+
+	// Return pod IP
+	return &pod.Status.PodIP, nil
 }
