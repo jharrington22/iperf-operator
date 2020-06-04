@@ -1,0 +1,11 @@
+apiVersion: iperf.managed.openshift.io/v1alpha1
+kind: Iperf
+metadata:
+  name: iperf-test
+  namespace: iperf-operator
+spec:
+  sessionDuration: 600 
+  concurrentConnections: 1000
+  maxThroughput: 0
+  clientNum: 0
+  serverNum: 0
