@@ -41,11 +41,8 @@ func generateServerPod(namespacedName types.NamespacedName, nodeSelectorValue st
 				{
 					Name:    "iperf-server",
 					Image:   iperfServerImage,
-					Command: []string{"/bin/bash"},
-					//Command: []string{iperfCmd},
-					//Args:    []string{"-c", "sleep 10 && iperf -s -p 5001 -B $(ifconfig | grep -oE \\ 10\\.[0-9]+\\.[0-9]+\\.[0-9]+\\ )"},
-					Args: []string{"-c", "sleep 10 && iperf -s -p 5001 -B 0.0.0.0"},
-					//Args: []string{"iperf", "-s", "-p", "5001", "-B", "0.0.0.0"},
+					Command: []string{iperfCmd},
+					Args:    []string{"-s", "-p", "5001", "-B", "0.0.0.0"},
 					Ports: []corev1.ContainerPort{
 						{
 							ContainerPort: 5001,
@@ -122,7 +119,7 @@ func generateTestServerPod(namespacedName types.NamespacedName, nodeSelectorValu
 
 }
 
-func generateClientJob(namespacedName types.NamespacedName, podIP, nodeSelectorValue, sessionDuration, concurrentConnections string) *batchv1.Job {
+func generateClientJob(namespacedName types.NamespacedName, iperfServerAddress, nodeSelectorValue string, iperfConfig ClientConfiguration) *batchv1.Job {
 	return &batchv1.Job{
 		TypeMeta: metav1.TypeMeta{
 			Kind:       "Job",
@@ -140,7 +137,7 @@ func generateClientJob(namespacedName types.NamespacedName, podIP, nodeSelectorV
 							Name:    "iperf-client",
 							Image:   iperfClientImage,
 							Command: []string{iperfCmd},
-							Args:    []string{"-c", podIP, "-t", sessionDuration, "-P", concurrentConnections},
+							Args:    iperfConfig.buildIClientCmd(iperfServerAddress),
 						},
 					},
 					NodeSelector: map[string]string{

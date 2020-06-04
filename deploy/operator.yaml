@@ -17,7 +17,7 @@ spec:
       containers:
         - name: iperf-operator
           # Replace this with the built image name
-          image: quay.io/jharrington22/iperf-operator:v0.1.18-c35f2cfc
+          image: quay.io/jharrington22/iperf-operator:v0.1.19-ce3ed0f6
           command:
           - iperf-operator
           imagePullPolicy: Always
