@@ -124,6 +124,10 @@ func (r *ReconcileIperf) Reconcile(request reconcile.Request) (reconcile.Result,
 		return reconcile.Result{}, err
 	}
 
+	if len(workerNodeList.Items) == 0 {
+		return reconcile.Result{}, fmt.Errorf("could not find at least one worker node")
+	}
+
 	// Fetch configuration for iPerf client/server's
 	sessionDuration := strconv.Itoa(cr.Spec.SessionDuration / len(workerNodeList.Items))
 	concurrentConnections := strconv.Itoa(cr.Spec.ConcurrentConnections / len(workerNodeList.Items))
