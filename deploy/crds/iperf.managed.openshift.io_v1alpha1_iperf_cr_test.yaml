@@ -4,8 +4,8 @@ metadata:
   name: iperf-test
   namespace: iperf-operator
 spec:
-  sessionDuration: 600 
-  concurrentConnections: 1000
-  maxThroughput: 0
+  sessionDuration: 600
+  concurrentConnections: 2000
+  targetBandwidth: 5000
   clientNum: 0
   serverNum: 0

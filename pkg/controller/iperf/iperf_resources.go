@@ -3,6 +3,7 @@ package iperf
 import (
 	"fmt"
 
+	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -121,29 +122,34 @@ func generateTestServerPod(namespacedName types.NamespacedName, nodeSelectorValu
 
 }
 
-func generateClientPod(namespacedName types.NamespacedName, podIP, nodeSelectorValue, sessionDuration, concurrentConnections string) *corev1.Pod {
-	return &corev1.Pod{
+func generateClientJob(namespacedName types.NamespacedName, podIP, nodeSelectorValue, sessionDuration, concurrentConnections string) *batchv1.Job {
+	return &batchv1.Job{
 		TypeMeta: metav1.TypeMeta{
-			Kind:       "Pod",
+			Kind:       "Job",
 			APIVersion: "v1",
 		},
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      namespacedName.Name,
 			Namespace: namespacedName.Namespace,
 		},
-		Spec: corev1.PodSpec{
-			Containers: []corev1.Container{
-				{
-					Name:    "iperf-client",
-					Image:   iperfClientImage,
-					Command: []string{iperfCmd},
-					Args:    []string{"-c", podIP, "-t", sessionDuration, "-P", concurrentConnections},
+		Spec: batchv1.JobSpec{
+			Template: corev1.PodTemplateSpec{
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{
+							Name:    "iperf-client",
+							Image:   iperfClientImage,
+							Command: []string{iperfCmd},
+							Args:    []string{"-c", podIP, "-t", sessionDuration, "-P", concurrentConnections},
+						},
+					},
+					NodeSelector: map[string]string{
+						nodeSelectorKey: nodeSelectorValue,
+					},
+					RestartPolicy:                 corev1.RestartPolicyNever,
+					TerminationGracePeriodSeconds: &gracePeriodSeconds,
 				},
 			},
-			NodeSelector: map[string]string{
-				nodeSelectorKey: nodeSelectorValue,
-			},
-			TerminationGracePeriodSeconds: &gracePeriodSeconds,
 		},
 	}
 

@@ -225,10 +225,10 @@ func (r *ReconcileIperf) Reconcile(request reconcile.Request) (reconcile.Result,
 			Name:      fmt.Sprintf("%s%s", clientNamePrefix, label),
 			Namespace: request.Namespace,
 		}
-		iperfClientPod := generateClientPod(namespacedName, iperfService.Spec.ClusterIP, label, sessionDuration, concurrentConnections)
+		iperfClientJob := generateClientJob(namespacedName, iperfService.Spec.ClusterIP, label, sessionDuration, concurrentConnections)
 
 		// Set Iperf instance as the owner and controller
-		if err := controllerutil.SetControllerReference(cr, iperfClientPod, r.scheme); err != nil {
+		if err := controllerutil.SetControllerReference(cr, iperfClientJob, r.scheme); err != nil {
 			return reconcile.Result{}, err
 		}
 
@@ -236,8 +236,8 @@ func (r *ReconcileIperf) Reconcile(request reconcile.Request) (reconcile.Result,
 		found := &corev1.Pod{}
 		err = r.client.Get(context.TODO(), types.NamespacedName{Name: namespacedName.Name, Namespace: namespacedName.Namespace}, found)
 		if err != nil && errors.IsNotFound(err) {
-			reqLogger.Info("Creating a new iperf client Pod", "iperfClientPod.Namespace", iperfClientPod.Namespace, "iperfClientPod.Name", iperfClientPod.Name, "iperClientPodWorkerLabel", label, "ServerIP", iperfServerIP, "iperfConcurrentConnections", concurrentConnections, "iperfSessionDuration", sessionDuration)
-			err = r.client.Create(context.TODO(), iperfClientPod)
+			reqLogger.Info("Creating a new iperf client Pod", "iperfClientJob.Namespace", iperfClientJob.Namespace, "iperfClientJob.Name", iperfClientJob.Name, "iperClientPodWorkerLabel", label, "ServerIP", iperfServerIP, "iperfConcurrentConnections", concurrentConnections, "iperfSessionDuration", sessionDuration)
+			err = r.client.Create(context.TODO(), iperfClientJob)
 			if err != nil {
 				return reconcile.Result{}, err
 			}
