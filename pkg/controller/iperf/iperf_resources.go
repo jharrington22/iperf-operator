@@ -1,6 +1,8 @@
 package iperf
 
 import (
+	"fmt"
+
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -60,6 +62,65 @@ func generateServerPod(namespacedName types.NamespacedName, nodeSelectorValue st
 
 }
 
+func generateTestServerPod(namespacedName types.NamespacedName, nodeSelectorValue string) *corev1.Pod {
+	return &corev1.Pod{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "Pod",
+			APIVersion: "v1",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      namespacedName.Name,
+			Namespace: namespacedName.Namespace,
+			Labels: map[string]string{
+				"app": "testserver",
+			},
+		},
+		Spec: corev1.PodSpec{
+			Containers: []corev1.Container{
+				{
+					Name:  "testserver",
+					Image: "gcr.io/google_containers/echoserver:1.4",
+					Ports: []corev1.ContainerPort{
+						{
+							ContainerPort: 8080,
+							Protocol:      corev1.ProtocolTCP,
+						},
+					},
+					VolumeMounts: []corev1.VolumeMount{
+						{
+							Name:      "var-lib-nginx",
+							MountPath: "/var/lib/nginx",
+						},
+						{
+							Name:      "run",
+							MountPath: "/run",
+						},
+					},
+				},
+			},
+			NodeSelector: map[string]string{
+				nodeSelectorKey: nodeSelectorValue,
+			},
+			TerminationGracePeriodSeconds: &gracePeriodSeconds,
+			Volumes: []corev1.Volume{
+				{
+					Name: "var-lib-nginx",
+					VolumeSource: corev1.VolumeSource{
+						EmptyDir: &corev1.EmptyDirVolumeSource{},
+					},
+				},
+				{
+					Name: "run",
+					VolumeSource: corev1.VolumeSource{
+						EmptyDir: &corev1.EmptyDirVolumeSource{},
+					},
+				},
+			},
+		},
+	}
+
+}
+
 func generateClientPod(namespacedName types.NamespacedName, podIP, nodeSelectorValue, sessionDuration, concurrentConnections string) *corev1.Pod {
 	return &corev1.Pod{
 		TypeMeta: metav1.TypeMeta{
@@ -81,6 +142,36 @@ func generateClientPod(namespacedName types.NamespacedName, podIP, nodeSelectorV
 			},
 			NodeSelector: map[string]string{
 				nodeSelectorKey: nodeSelectorValue,
+			},
+			TerminationGracePeriodSeconds: &gracePeriodSeconds,
+		},
+	}
+
+}
+
+func generateTestClientPod(namespacedName types.NamespacedName, targetNode, targetPodIP string) *corev1.Pod {
+	return &corev1.Pod{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "Pod",
+			APIVersion: "v1",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      namespacedName.Name,
+			Namespace: namespacedName.Namespace,
+		},
+		Spec: corev1.PodSpec{
+			Containers: []corev1.Container{
+				{
+					Name:    "testclient",
+					Image:   "curlimages/curl:7.70.0",
+					Command: []string{"/bin/sh", "-c"},
+					Args: []string{
+						fmt.Sprintf("while true; do curl -s -o /dev/null -w '%%{json}' http://%s:8080/; echo; sleep 5; done", targetPodIP),
+					},
+				},
+			},
+			NodeSelector: map[string]string{
+				nodeSelectorKey: targetNode,
 			},
 			TerminationGracePeriodSeconds: &gracePeriodSeconds,
 		},

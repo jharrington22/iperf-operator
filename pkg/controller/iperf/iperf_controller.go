@@ -59,13 +59,13 @@ func add(mgr manager.Manager, r reconcile.Reconciler) error {
 
 	// // TODO(user): Modify this to be the types you create that are owned by the primary resource
 	// // Watch for changes to secondary resource Pods and requeue the owner Iperf
-	// err = c.Watch(&source.Kind{Type: &corev1.Pod{}}, &handler.EnqueueRequestForOwner{
-	// 	IsController: true,
-	// 	OwnerType:    &iperfv1alpha1.Iperf{},
-	// })
-	// if err != nil {
-	// 	return err
-	// }
+	err = c.Watch(&source.Kind{Type: &corev1.Pod{}}, &handler.EnqueueRequestForOwner{
+		IsController: true,
+		OwnerType:    &iperfv1alpha1.Iperf{},
+	})
+	if err != nil {
+		return err
+	}
 
 	return nil
 }
@@ -174,7 +174,7 @@ func (r *ReconcileIperf) Reconcile(request reconcile.Request) (reconcile.Result,
 
 		time.Sleep(time.Duration(10 * time.Second))
 		// Get server pod IP to pass to iPerf clients
-		iperfServerIP, err := r.getServerPodIP(namespacedName)
+		iperfServerIP, err := r.getPodIP(namespacedName)
 		if err != nil {
 			if errors.IsNotFound(err) {
 				// Request object not found, object my not be ready yet
@@ -246,13 +246,89 @@ func (r *ReconcileIperf) Reconcile(request reconcile.Request) (reconcile.Result,
 		}
 		// Continue as client pod alraedy exists
 	}
-
 	reqLogger.Info("Server and clients created")
+
+	// Test servers and clients
+	reqLogger.Info("Creating test servers and clients")
+	testServers := make(map[string]string)
+	for _, label := range workerNodeLabels {
+		serverNamePrefix := "testserver-"
+		namespacedName := types.NamespacedName{
+			Name:      fmt.Sprintf("%s%s", serverNamePrefix, label),
+			Namespace: request.Namespace,
+		}
+		// Create testserver pod on worker node
+		testServerPod := generateTestServerPod(namespacedName, label)
+
+		// Set Iperf instance as the owner and controller
+		if err := controllerutil.SetControllerReference(cr, testServerPod, r.scheme); err != nil {
+			return reconcile.Result{}, err
+		}
+
+		// Check if a testserver pod already exists
+		found := &corev1.Pod{}
+		err = r.client.Get(context.TODO(), types.NamespacedName{Name: namespacedName.Name, Namespace: namespacedName.Namespace}, found)
+		if err != nil && errors.IsNotFound(err) {
+			reqLogger.Info("Creating a new testserver Pod", "testServerPod.Namespace", testServerPod.Namespace, "testServerPod.Name", testServerPod.Name, "iperServerPodWorkerLabel", label)
+			err = r.client.Create(context.TODO(), testServerPod)
+			if err != nil {
+				return reconcile.Result{}, err
+			}
+		} else if err != nil {
+			return reconcile.Result{}, err
+		}
+
+		time.Sleep(time.Duration(10 * time.Second))
+		// Get testserver pod IP to pass to test clients
+		testServerIP, err := r.getPodIP(namespacedName)
+		if err != nil {
+			if errors.IsNotFound(err) {
+				// Request object not found, object my not be ready yet
+				// TODO: Wait for object to exist instead of requeuing in time
+				// Log that the object was not found and that we are requeuing (Assuming it'll exist in the future)
+				reqLogger.Info(fmt.Sprintf("Unable to find pod %s retrying in %d", namespacedName.Name, requeueWaitTime))
+				return reconcile.Result{RequeueAfter: requeueWaitTime}, nil
+			}
+			// Error reading the object - requeue the request.
+			return reconcile.Result{}, err
+		}
+
+		testServers[label] = *testServerIP
+	}
+	reqLogger.Info("Finished creating test servers")
+
+	for label, testServerIP := range testServers {
+		clientNamePrefix := "testclient-"
+		namespacedName := types.NamespacedName{
+			Name:      fmt.Sprintf("%s%s", clientNamePrefix, label),
+			Namespace: request.Namespace,
+		}
+		testClientPod := generateTestClientPod(namespacedName, label, testServerIP)
+
+		// Set Iperf instance as the owner and controller
+		if err := controllerutil.SetControllerReference(cr, testClientPod, r.scheme); err != nil {
+			return reconcile.Result{}, err
+		}
+
+		// Check if a test client pod already exists
+		found := &corev1.Pod{}
+		err = r.client.Get(context.TODO(), types.NamespacedName{Name: namespacedName.Name, Namespace: namespacedName.Namespace}, found)
+		if err != nil && errors.IsNotFound(err) {
+			reqLogger.Info("Creating a new testclient Pod", "testClientPod.Namespace", testClientPod.Namespace, "testClientPod.Name", testClientPod.Name, "iperClientPodWorkerLabel", label, "testServerIP", testServerIP)
+			err = r.client.Create(context.TODO(), testClientPod)
+			if err != nil {
+				return reconcile.Result{}, err
+			}
+		} else if err != nil {
+			return reconcile.Result{}, err
+		}
+	}
+	reqLogger.Info("Finished creating test clients")
 
 	return reconcile.Result{}, nil
 }
 
-func (r *ReconcileIperf) getServerPodIP(namespacedName types.NamespacedName) (*string, error) {
+func (r *ReconcileIperf) getPodIP(namespacedName types.NamespacedName) (*string, error) {
 
 	pod := &corev1.Pod{}
 	err := r.client.Get(context.TODO(), namespacedName, pod)
