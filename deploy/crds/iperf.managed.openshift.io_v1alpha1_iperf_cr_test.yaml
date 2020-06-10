@@ -5,7 +5,7 @@ metadata:
   namespace: iperf-operator
 spec:
   sessionDuration: 600
-  concurrentConnections: 2000
+  parallelConnections: 2000
   targetBandwidth: 5000
   clientNum: 0
   serverNum: 0

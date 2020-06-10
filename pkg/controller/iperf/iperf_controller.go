@@ -3,7 +3,6 @@ package iperf
 import (
 	"context"
 	"fmt"
-	"strconv"
 	"time"
 
 	iperfv1alpha1 "github.com/jharrington22/iperf-operator/pkg/apis/iperf/v1alpha1"
@@ -129,11 +128,14 @@ func (r *ReconcileIperf) Reconcile(request reconcile.Request) (reconcile.Result,
 	}
 
 	// Fetch configuration for iPerf client/server's
-	sessionDuration := strconv.Itoa(cr.Spec.SessionDuration / len(workerNodeList.Items))
-	concurrentConnections := strconv.Itoa(cr.Spec.ConcurrentConnections / len(workerNodeList.Items))
+	iperfClientConfig := ClientConfiguration{}
+	iperfClientConfig.sessionDuration = cr.Spec.SessionDuration
+	iperfClientConfig.parallelConnections = cr.Spec.ParallelConnections / len(workerNodeList.Items)
+	// Set target bandwidth per paralel connecitons per client
+	iperfClientConfig.targetBandwidth = float64(cr.Spec.TargetBandwidth) / float64(iperfClientConfig.parallelConnections) / float64(len(workerNodeList.Items))
 
-	reqLogger.Info(fmt.Sprintf("From CR: SessionDuration: %d, ConcurrentContections: %d", cr.Spec.SessionDuration, cr.Spec.ConcurrentConnections))
-	reqLogger.Info(fmt.Sprintf("From Var: SessionDuration: %s, ConcurrentContections: %s", sessionDuration, concurrentConnections))
+	reqLogger.Info(fmt.Sprintf("From CR: SessionDuration: %d, ConcurrentContections: %d", cr.Spec.SessionDuration, cr.Spec.ParallelConnections))
+	reqLogger.Info(fmt.Sprintf("From Var: SessionDuration: %d, ConcurrentContections: %d", iperfClientConfig.sessionDuration, iperfClientConfig.parallelConnections))
 
 	// Determine the number of worker nodes
 	workerNodeNum := len(workerNodeList.Items)
@@ -225,7 +227,7 @@ func (r *ReconcileIperf) Reconcile(request reconcile.Request) (reconcile.Result,
 			Name:      fmt.Sprintf("%s%s", clientNamePrefix, label),
 			Namespace: request.Namespace,
 		}
-		iperfClientJob := generateClientJob(namespacedName, iperfService.Spec.ClusterIP, label, sessionDuration, concurrentConnections)
+		iperfClientJob := generateClientJob(namespacedName, iperfService.Spec.ClusterIP, label, iperfClientConfig)
 
 		// Set Iperf instance as the owner and controller
 		if err := controllerutil.SetControllerReference(cr, iperfClientJob, r.scheme); err != nil {
@@ -236,7 +238,7 @@ func (r *ReconcileIperf) Reconcile(request reconcile.Request) (reconcile.Result,
 		found := &corev1.Pod{}
 		err = r.client.Get(context.TODO(), types.NamespacedName{Name: namespacedName.Name, Namespace: namespacedName.Namespace}, found)
 		if err != nil && errors.IsNotFound(err) {
-			reqLogger.Info("Creating a new iperf client Pod", "iperfClientJob.Namespace", iperfClientJob.Namespace, "iperfClientJob.Name", iperfClientJob.Name, "iperClientPodWorkerLabel", label, "ServerIP", iperfServerIP, "iperfConcurrentConnections", concurrentConnections, "iperfSessionDuration", sessionDuration)
+			reqLogger.Info("Creating a new iperf client Pod", "iperfClientJob.Namespace", iperfClientJob.Namespace, "iperfClientJob.Name", iperfClientJob.Name, "iperClientPodWorkerLabel", label, "ServerIP", iperfServerIP, "iperfConcurrentConnections", iperfClientConfig.parallelConnections, "iperfSessionDuration", iperfClientConfig.sessionDuration)
 			err = r.client.Create(context.TODO(), iperfClientJob)
 			if err != nil {
 				return reconcile.Result{}, err

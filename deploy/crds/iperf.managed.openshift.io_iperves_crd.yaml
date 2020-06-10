@@ -35,13 +35,9 @@ spec:
                 description: ClientNum Number of clients, should not exceed number
                   of nodes (default == number of nodes)
                 type: integer
-              concurrentConnections:
-                description: ConcurrentConnections Total number of connections from
+              parallelConnections:
+                description: ParallelConnections Total number of connections from
                   client to server (divided equally between num of clients)
-                type: integer
-              maxThroughput:
-                description: MaxThroughput Max bandwidth all clients should consume
-                  (divided equally between num of clients)
                 type: integer
               serverNum:
                 description: ServerNum Number of servers, should not exceed number
@@ -50,8 +46,12 @@ spec:
               sessionDuration:
                 description: SessionDuration duration in minutes for the test to run
                 type: integer
+              targetBandwidth:
+                description: TargetBandwidth target bandwidth in Mbits per second
+                  (divided equally between num of clients and parallel connections)
+                type: integer
             required:
-            - concurrentConnections
+            - parallelConnections
             - sessionDuration
             type: object
           status:
