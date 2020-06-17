@@ -152,31 +152,38 @@ func generateClientJob(namespacedName types.NamespacedName, iperfServerAddress, 
 
 }
 
-func generateTestClientPod(namespacedName types.NamespacedName, targetNode, targetPodIP string) *corev1.Pod {
-	return &corev1.Pod{
+func generateTestClientPod(namespacedName types.NamespacedName, targetNode, targetPodIP string) *batchv1.Job {
+	numRequests := 600
+	requestInterval := 1
+	return &batchv1.Job{
 		TypeMeta: metav1.TypeMeta{
-			Kind:       "Pod",
+			Kind:       "Job",
 			APIVersion: "v1",
 		},
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      namespacedName.Name,
 			Namespace: namespacedName.Namespace,
 		},
-		Spec: corev1.PodSpec{
-			Containers: []corev1.Container{
-				{
-					Name:    "testclient",
-					Image:   "curlimages/curl:7.70.0",
-					Command: []string{"/bin/sh", "-c"},
-					Args: []string{
-						fmt.Sprintf("while true; do curl -s -o /dev/null -w '%%{json}' http://%s:8080/; echo; sleep 5; done", targetPodIP),
+		Spec: batchv1.JobSpec{
+			Template: corev1.PodTemplateSpec{
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{
+							Name:    "testclient",
+							Image:   "curlimages/curl:7.70.0",
+							Command: []string{"/bin/sh", "-c"},
+							Args: []string{
+								fmt.Sprintf("i=0; while [ $i -lt %d ]; do curl -s -o /dev/null -w '%%{json}' http://%s:8080/; echo; i=$(expr $i + 1); sleep %d; done", numRequests, targetPodIP, requestInterval),
+							},
+						},
 					},
+					NodeSelector: map[string]string{
+						nodeSelectorKey: targetNode,
+					},
+					RestartPolicy:                 corev1.RestartPolicyNever,
+					TerminationGracePeriodSeconds: &gracePeriodSeconds,
 				},
 			},
-			NodeSelector: map[string]string{
-				nodeSelectorKey: targetNode,
-			},
-			TerminationGracePeriodSeconds: &gracePeriodSeconds,
 		},
 	}
 
