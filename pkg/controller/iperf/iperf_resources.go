@@ -119,7 +119,7 @@ func generateTestServerPod(namespacedName types.NamespacedName, nodeSelectorValu
 
 }
 
-func generateClientJob(namespacedName types.NamespacedName, iperfServerAddress, nodeSelectorValue string, iperfConfig ClientConfiguration) *batchv1.Job {
+func generateClientJob(namespacedName types.NamespacedName, iperfServerAddress, nodeSelectorValue string, iperfConfig *ClientConfiguration) *batchv1.Job {
 	return &batchv1.Job{
 		TypeMeta: metav1.TypeMeta{
 			Kind:       "Job",
