@@ -3,6 +3,7 @@ package iperf
 import (
 	"context"
 	"fmt"
+	"math"
 	"time"
 
 	iperfv1alpha1 "github.com/jharrington22/iperf-operator/pkg/apis/iperf/v1alpha1"
@@ -141,8 +142,16 @@ func (r *ReconcileIperf) Reconcile(request reconcile.Request) (reconcile.Result,
 
 	iperfServers := make(map[string]string)
 
-	for _, label := range workerNodeLabels {
-		for i := 0; i < iperfClientConfig.serverNum; i++ {
+	serverIterations := math.Ceil(float64(iperfClientConfig.serverNum) / float64(workerNodeNum))
+	totalServers := iperfClientConfig.serverNum
+
+	reqLogger.Info(fmt.Sprintf("serverIterations: %d", int(serverIterations)))
+
+	for i := 0; i < int(serverIterations); i++ {
+		for _, label := range workerNodeLabels {
+			if totalServers == 0 {
+				break
+			}
 			serverNamePrefix := "iperf-server-"
 			namespacedName := types.NamespacedName{
 				Name:      fmt.Sprintf("%s%s-%d", serverNamePrefix, label, i),
@@ -170,8 +179,9 @@ func (r *ReconcileIperf) Reconcile(request reconcile.Request) (reconcile.Result,
 				return reconcile.Result{}, err
 			}
 			// Continue as server pod alraedy exists
+			totalServers = totalServers - 1
 
-			time.Sleep(time.Duration(10 * time.Second))
+			time.Sleep(time.Duration(5 * time.Second))
 			// Get server pod IP to pass to iPerf clients
 			iperfServerIP, err := r.getPodIP(namespacedName)
 			if err != nil {
@@ -219,8 +229,16 @@ func (r *ReconcileIperf) Reconcile(request reconcile.Request) (reconcile.Result,
 
 	// Continue as service alraedy exists
 
-	for label, iperfServerIP := range iperfServers {
-		for i := 0; i < iperfClientConfig.clientNum; i++ {
+	clientIterations := math.Ceil(float64(iperfClientConfig.clientNum) / float64(workerNodeNum))
+	totalClients := iperfClientConfig.clientNum
+
+	reqLogger.Info(fmt.Sprintf("clientIterations: %d", int(clientIterations)))
+
+	for i := 0; i < int(clientIterations); i++ {
+		for label, iperfServerIP := range iperfServers {
+			if totalClients == 0 {
+				break
+			}
 			clientNamePrefix := "iperf-client-"
 			namespacedName := types.NamespacedName{
 				Name:      fmt.Sprintf("%s%s-%d", clientNamePrefix, label, i),
@@ -232,7 +250,6 @@ func (r *ReconcileIperf) Reconcile(request reconcile.Request) (reconcile.Result,
 			if err := controllerutil.SetControllerReference(cr, iperfClientJob, r.scheme); err != nil {
 				return reconcile.Result{}, err
 			}
-
 			// Check if a server pod already exists
 			found := &corev1.Pod{}
 			err = r.client.Get(context.TODO(), types.NamespacedName{Name: namespacedName.Name, Namespace: namespacedName.Namespace}, found)
@@ -246,6 +263,7 @@ func (r *ReconcileIperf) Reconcile(request reconcile.Request) (reconcile.Result,
 				return reconcile.Result{}, err
 			}
 			// Continue as client pod alraedy exists
+			totalClients = totalClients - 1
 		}
 	}
 	reqLogger.Info("Server and clients created")
@@ -280,7 +298,7 @@ func (r *ReconcileIperf) Reconcile(request reconcile.Request) (reconcile.Result,
 			return reconcile.Result{}, err
 		}
 
-		time.Sleep(time.Duration(10 * time.Second))
+		time.Sleep(time.Duration(5 * time.Second))
 		// Get testserver pod IP to pass to test clients
 		testServerIP, err := r.getPodIP(namespacedName)
 		if err != nil {
