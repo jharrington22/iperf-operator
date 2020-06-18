@@ -26,7 +26,7 @@ docker-build: build
 
 .PHONY: login
 login:
-	docker login -u "$$QUAY_BOT_USERNAME" --password "$$QUAY_BOT_PASSWORD" quay.io
+	$(CONTAINER_ENGINE) login -u "$$QUAY_BOT_USERNAME" --password "$$QUAY_BOT_PASSWORD" quay.io
 
 .PHONY: deploy
 deploy:
