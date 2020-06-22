@@ -30,16 +30,14 @@ func newClientConfiguration(workerNodeCount int, cr *iperfv1alpha1.Iperf) *Clien
 		serverNum = cr.Spec.ServerNum
 	}
 
-	parallelConnections := cr.Spec.ParallelConnections / clientNum
-
 	// Fetch configuration for iPerf client/server's
 	return &ClientConfiguration{
 		clientNum:           clientNum,
 		serverNum:           serverNum,
 		sessionDuration:     cr.Spec.SessionDuration,
-		parallelConnections: parallelConnections / (workerNodeCount * clientNum),
+		parallelConnections: cr.Spec.ParallelConnections / clientNum,
 		// Set target bandwidth per paralel connecitons per client
-		targetBandwidth: float64(cr.Spec.TargetBandwidth) / float64(parallelConnections),
+		targetBandwidth: float64(cr.Spec.TargetBandwidth) / float64(cr.Spec.ParallelConnections),
 	}
 
 }
