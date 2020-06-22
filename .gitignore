@@ -60,8 +60,7 @@ anaconda-mode/
 # Test binary, build with 'go test -c'
 *.test
 # Output of the go coverage tool, specifically when used with LiteIDE
-*.out
-### Vim ###
+*.out ### Vim ###
 # swap
 .sw[a-p]
 .*.sw[a-p]
@@ -75,3 +74,5 @@ tags
 .vscode/*
 .history
 # End of https://www.gitignore.io/api/go,vim,emacs,visualstudiocode
+# Ignore reports
+.csv
