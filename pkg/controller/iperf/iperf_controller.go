@@ -24,7 +24,8 @@ import (
 var log = logf.Log.WithName("controller_iperf")
 
 const (
-	requeueWaitTime = time.Duration(1)
+	requeueWaitTime  = time.Duration(1)
+	podReadyWaitTime = time.Duration(10)
 )
 
 /**
@@ -181,7 +182,7 @@ func (r *ReconcileIperf) Reconcile(request reconcile.Request) (reconcile.Result,
 			// Continue as server pod alraedy exists
 			totalServers = totalServers - 1
 
-			time.Sleep(time.Duration(5 * time.Second))
+			time.Sleep(podReadyWaitTime)
 			// Get server pod IP to pass to iPerf clients
 			iperfServerIP, err := r.getPodIP(namespacedName)
 			if err != nil {
@@ -220,7 +221,7 @@ func (r *ReconcileIperf) Reconcile(request reconcile.Request) (reconcile.Result,
 		return reconcile.Result{}, err
 	}
 
-	time.Sleep(time.Duration(5 * time.Second))
+	time.Sleep(podReadyWaitTime)
 	iperfService := &corev1.Service{}
 	err = r.client.Get(context.TODO(), types.NamespacedName{Name: "iperf-service", Namespace: "iperf-operator"}, iperfService)
 	if err != nil {
