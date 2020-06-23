@@ -25,7 +25,7 @@ var log = logf.Log.WithName("controller_iperf")
 
 const (
 	requeueWaitTime  = time.Duration(1)
-	podReadyWaitTime = time.Duration(10)
+	podReadyWaitTime = time.Duration(10 * time.Second)
 )
 
 /**
@@ -299,7 +299,7 @@ func (r *ReconcileIperf) Reconcile(request reconcile.Request) (reconcile.Result,
 			return reconcile.Result{}, err
 		}
 
-		time.Sleep(time.Duration(5 * time.Second))
+		time.Sleep(podReadyWaitTime)
 		// Get testserver pod IP to pass to test clients
 		testServerIP, err := r.getPodIP(namespacedName)
 		if err != nil {
