@@ -1,6 +1,9 @@
 # Validate variables in project.mk exist
-ifndef IMAGE_REGISTRY
-$(error IMAGE_REGISTRY is not set; check project.mk file)
+ifndef QUAY_IMAGE_REGISTRY
+$(error QUAY_IMAGE_REGISTRY is not set; check project.mk file)
+endif
+ifndef DOCKER_IMAGE_REGISTRY
+$(error DOCKER_IMAGE_REGISTRY is not set; check project.mk file)
 endif
 ifndef IMAGE_REPOSITORY
 $(error IMAGE_REPOSITORY is not set; check project.mk file)
@@ -22,9 +25,12 @@ OPERATOR_VERSION=$(VERSION_MAJOR).$(VERSION_MINOR).$(COMMIT_NUMBER)-$(CURRENT_CO
 
 CONTAINER_ENGINE=$(shell command -v podman 2>/dev/null || command -v docker 2>/dev/null)
 
-IMG?=$(IMAGE_REGISTRY)/$(IMAGE_REPOSITORY)/$(IMAGE_NAME):v$(OPERATOR_VERSION)
-OPERATOR_IMAGE_URI=${IMG}
-OPERATOR_IMAGE_URI_LATEST=$(IMAGE_REGISTRY)/$(IMAGE_REPOSITORY)/$(IMAGE_NAME):latest
+QUAY_OPERATOR_IMAGE_URI=$(QUAY_IMAGE_REGISTRY)/$(IMAGE_REPOSITORY)/$(IMAGE_NAME):v$(OPERATOR_VERSION)
+QUAY_OPERATOR_IMAGE_URI_LATEST=$(QUAY_IMAGE_REGISTRY)/$(IMAGE_REPOSITORY)/$(IMAGE_NAME):latest
+
+DOCKER_OPERATOR_IMAGE_URI=$(DOCKER_IMAGE_REGISTRY)/$(IMAGE_REPOSITORY)/$(IMAGE_NAME):v$(OPERATOR_VERSION)
+DOCKER_OPERATOR_IMAGE_URI_LATEST=$(DOCKER_IMAGE_REGISTRY)/$(IMAGE_REPOSITORY)/$(IMAGE_NAME):latest
+
 OPERATOR_DOCKERFILE ?=build/Dockerfile
 
 BINFILE=build/_output/bin/$(OPERATOR_NAME)
@@ -34,7 +40,7 @@ GOFLAGS=-gcflags="all=-trimpath=${GOPATH}" -asmflags="all=-trimpath=${GOPATH}"
 
 TESTTARGETS := $(shell go list -e ./... | egrep -v "/(vendor)/")
 # ex, -v
-TESTOPTS := 
+TESTOPTS :=
 
 ALLOW_DIRTY_CHECKOUT?=false
 
@@ -44,19 +50,29 @@ default: gobuild
 clean:
 	rm -rf ./build/_output
 
-.PHONY: isclean 
-isclean:
+.PHONY: isclean
+sclean:
 	@(test "$(ALLOW_DIRTY_CHECKOUT)" != "false" || test 0 -eq $$(git status --porcelain | wc -l)) || (echo "Local git checkout is not clean, commit changes and try again." && exit 1)
 
 .PHONY: build
 build: isclean envtest
-	$(CONTAINER_ENGINE) build . -f $(OPERATOR_DOCKERFILE) -t $(OPERATOR_IMAGE_URI)
-	$(CONTAINER_ENGINE) tag $(OPERATOR_IMAGE_URI) $(OPERATOR_IMAGE_URI_LATEST)
+	$(CONTAINER_ENGINE) build . -f $(OPERATOR_DOCKERFILE) -t $(QUAY_OPERATOR_IMAGE_URI)
+	$(CONTAINER_ENGINE) tag $(QUAY_OPERATOR_IMAGE_URI) $(QUAY_OPERATOR_IMAGE_URI_LATEST)
+	$(CONTAINER_ENGINE) tag $(QUAY_OPERATOR_IMAGE_URI) $(DOCKER_OPERATOR_IMAGE_URI_LATEST)
+	$(CONTAINER_ENGINE) tag $(QUAY_OPERATOR_IMAGE_URI) $(DOCKER_OPERATOR_IMAGE_URI)
 
 .PHONY: push
+push: quay docker
+
+.PHONY: quay
 push:
-	$(CONTAINER_ENGINE) push $(OPERATOR_IMAGE_URI)
-	$(CONTAINER_ENGINE) push $(OPERATOR_IMAGE_URI_LATEST)
+	$(CONTAINER_ENGINE) push $(QUAY_OPERATOR_IMAGE_URI)
+	$(CONTAINER_ENGINE) push $(QUAY_OPERATOR_IMAGE_URI_LATEST)
+
+.PHONY: docker
+push:
+	$(CONTAINER_ENGINE) push $(DOCKER_OPERATOR_IMAGE_URI)
+	$(CONTAINER_ENGINE) push $(DOCKER_OPERATOR_IMAGE_URI_LATEST)
 
 .PHONY: gocheck
 gocheck: ## Lint code
