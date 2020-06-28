@@ -65,12 +65,12 @@ build: isclean envtest
 push: quay docker
 
 .PHONY: quay
-push:
+quay:
 	$(CONTAINER_ENGINE) push $(QUAY_OPERATOR_IMAGE_URI)
 	$(CONTAINER_ENGINE) push $(QUAY_OPERATOR_IMAGE_URI_LATEST)
 
 .PHONY: docker
-push:
+docker:
 	$(CONTAINER_ENGINE) push $(DOCKER_OPERATOR_IMAGE_URI)
 	$(CONTAINER_ENGINE) push $(DOCKER_OPERATOR_IMAGE_URI_LATEST)
 
